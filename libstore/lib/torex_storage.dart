@@ -15,7 +15,7 @@
 ///
 /// await db.close();
 /// ```
-library;
+library libstore;
 
 import 'dart:async';
 import 'dart:io';
@@ -227,7 +227,7 @@ class TorexStorage {
       }
     }
 
-    return 'Compaction tugadi: $totalBefore ta yozuv saqlandi, bo\'sh kolleksiyalar o\'chirildi';
+    return 'Compaction complete: $totalAfter records preserved across $totalBefore collections, empty collections removed';
   }
 
   /// Check if compaction is needed

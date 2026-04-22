@@ -95,7 +95,7 @@ class StoreWatcher {
   void cancel() {
     _active = false;
     if (_subscriptionId != null && _onCancel != null) {
-      _onCancel!(_subscriptionId!);
+      _onCancel(_subscriptionId!);
     }
     _controller.close();
   }
