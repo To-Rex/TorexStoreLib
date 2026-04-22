@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:libstore/torex_storage.dart';
+import 'package:libstore/libstore.dart';
 
 import 'package:torexstore/main.dart';
 
