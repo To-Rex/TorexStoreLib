@@ -1,0 +1,20 @@
+name: libstore
+description: High-performance embedded NoSQL database for Flutter, powered by Rust via flutter_rust_bridge.
+version: 0.1.0
+repository: https://github.com/torex-dev/libstore
+issue_tracker: https://github.com/torex-dev/libstore/issues
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_rust_bridge: ^2.12.0
+  path_provider: ^2.1.0
+  uuid: ^4.5.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  ffigen: ^13.0.0

@@ -1,0 +1,5 @@
+# flutter_rust_bridge configuration for TOREX Storage
+rust_input: rust/src/lib.rs
+dart_output: lib/src/bridge/generated.dart
+c_output: ios/Runner/bridge_generated.h
+rust_root: rust
