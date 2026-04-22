@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:libstore/torex_storage.dart';
+import 'package:libstore/libstore.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
