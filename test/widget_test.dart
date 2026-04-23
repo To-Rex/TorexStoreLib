@@ -1,10 +1,8 @@
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:torexstore/torexstore.dart';
-
-import 'package:torexstore/main.dart';
+import 'package:torexstore_app/main.dart';
 
 /// Helper: vaqtinchalik papkada TorexStorage yaratadi
 Future<TorexStorage> _createTestDb() async {
