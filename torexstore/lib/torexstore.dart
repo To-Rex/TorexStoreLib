@@ -15,7 +15,7 @@
 ///
 /// await db.close();
 /// ```
-library libstore;
+library torexstore;
 
 import 'dart:async';
 import 'dart:io';

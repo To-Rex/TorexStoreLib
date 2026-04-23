@@ -1,6 +1,6 @@
 # TOREX Storage
 
-[![pub package](https://img.shields.io/pub/v/libstore.svg)](https://pub.dev/packages/libstore)
+[![pub package](https://img.shields.io/pub/v/torexstore.svg)](https://pub.dev/packages/torexstore)
 
 High-performance, production-ready embedded NoSQL database for Flutter, powered by Rust via `flutter_rust_bridge`.
 
@@ -20,11 +20,11 @@ TOREX Storage provides a clean, developer-friendly Dart API for all database ope
 
 ## Installation
 
-Add `libstore` to your `pubspec.yaml`:
+Add `torexstore` to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  libstore: ^0.1.0
+  torexstore: ^0.0.1
 ```
 
 Then run:
@@ -49,7 +49,7 @@ After adding the dependency, generate the bridge code and build the Rust library
 
 ```bash
 # Generate flutter_rust_bridge code
-cd libstore
+cd torexstore
 flutter_rust_bridge_codegen generate
 
 # Build the Rust native library
@@ -68,7 +68,7 @@ flutter run
 ### 1. Import and Initialize
 
 ```dart
-import 'package:libstore/libstore.dart';
+import 'package:torexstore/torexstore.dart';
 
 void main() async {
   final db = TorexStorage();
@@ -364,7 +364,7 @@ enum StoreEventType { insert, update, delete }
 
 ```dart
 import 'package:flutter/material.dart';
-import 'package:libstore/libstore.dart';
+import 'package:torexstore/torexstore.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

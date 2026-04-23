@@ -1,13 +1,13 @@
-// Example: libstore usage
+// Example: torexstore usage
 //
-// This example demonstrates the core features of the libstore package:
+// This example demonstrates the core features of the torexstore package:
 // - Initializing the database
 // - CRUD operations (put, get, update, delete)
 // - Querying with filters
 // - Watching for changes
 // - Compaction
 
-import 'package:libstore/libstore.dart';
+import 'package:torexstore/torexstore.dart';
 
 Future<void> main() async {
   // Create and initialize the database

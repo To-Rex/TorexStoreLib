@@ -4,7 +4,7 @@ Flutter application demonstrating the TOREX Storage embedded database library.
 
 ## Overview
 
-This project uses **libstore** — a high-performance embedded database library built with **Rust** and **flutter_rust_bridge**. The main Flutter app contains only UI logic; all database operations are handled by the libstore library.
+This project uses **torexstore** — a high-performance embedded database library built with **Rust** and **flutter_rust_bridge**. The main Flutter app contains only UI logic; all database operations are handled by the torexstore library.
 
 ## Project Structure
 
@@ -12,7 +12,7 @@ This project uses **libstore** — a high-performance embedded database library 
 torexstore/
 ├── lib/
 │   └── main.dart              # UI only - uses TorexStorage API
-├── libstore/                  # Embedded database library
+├── torexstore/                  # Embedded database library
 │   ├── rust/                  # Rust core engine
 │   │   ├── Cargo.toml
 │   │   └── src/
@@ -39,13 +39,13 @@ torexstore/
 
 1. Install Rust: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 2. Install flutter_rust_bridge: `cargo install flutter_rust_bridge_codegen`
-3. Generate bridge code: `cd libstore && flutter_rust_bridge_codegen generate`
+3. Generate bridge code: `cd torexstore && flutter_rust_bridge_codegen generate`
 4. Run the app: `flutter run`
 
 ## Usage Example
 
 ```dart
-import 'package:libstore/torex_storage.dart';
+import 'package:torexstore/torexstore.dart';
 
 final db = TorexStorage();
 await db.init();
@@ -66,4 +66,4 @@ db.watch('users').listen((event) {
 await db.close();
 ```
 
-See [libstore/README.md](libstore/README.md) for full documentation.
+See [torexstore/README.md](torexstore/README.md) for full documentation.
