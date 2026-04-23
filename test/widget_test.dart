@@ -491,7 +491,6 @@ void main() {
           TorexDocument(
               id: 'u1', fields: {'name': 'Alice', 'age': 25}));
 
-
       // Stream hodisalar biroz vaqt oladi
       await Future.delayed(const Duration(milliseconds: 100));
 

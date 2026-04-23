@@ -40,6 +40,11 @@ export 'src/reactive/store_watcher.dart';
 class TorexStorage {
   static const _dbName = 'torex_data';
 
+  /// Creates a new TorexStorage instance.
+  ///
+  /// Call [init] before performing any database operations.
+  TorexStorage();
+
   bool _initialized = false;
   String? _path;
   final Map<String, Map<String, Map<String, dynamic>>> _store = {};

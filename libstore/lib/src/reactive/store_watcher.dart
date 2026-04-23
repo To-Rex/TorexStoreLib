@@ -17,6 +17,12 @@ class StoreChangeEvent {
   /// Record data (null for delete events)
   final Map<String, dynamic>? data;
 
+  /// Creates a new store change event.
+  ///
+  /// [type] is the event type (insert, update, or delete).
+  /// [collection] is the name of the collection where the change occurred.
+  /// [id] is the document ID affected by the change.
+  /// [data] is the document data (null for delete events).
   const StoreChangeEvent({
     required this.type,
     required this.collection,
@@ -37,6 +43,10 @@ class StoreWatcher {
   int? _subscriptionId;
   bool _active = true;
 
+  /// Creates a new watcher for the given [collection].
+  ///
+  /// The [onCancel] callback is invoked when the watcher is cancelled,
+  /// receiving the native subscription ID for cleanup.
   StoreWatcher({
     required String collection,
     void Function(int subscriptionId)? onCancel,

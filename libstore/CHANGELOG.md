@@ -1,3 +1,9 @@
+## 0.1.1
+
+- Fixed repository URL in pubspec.yaml for pub.dev verification.
+- Added dartdoc comments to all public constructors.
+- Added example file for package usage demonstration.
+
 ## 0.1.0
 
 - Initial release.
