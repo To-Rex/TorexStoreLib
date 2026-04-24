@@ -2,19 +2,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:torexstore/torexstore.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  final db = TorexStorage();
-  await db.init();
-
-  runApp(TorexStoreApp(db: db));
+void main() {
+  runApp(const TorexStoreApp());
 }
 
 class TorexStoreApp extends StatelessWidget {
-  final TorexStorage db;
-
-  const TorexStoreApp({super.key, required this.db});
+  const TorexStoreApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -29,7 +22,7 @@ class TorexStoreApp extends StatelessWidget {
         useMaterial3: true,
         appBarTheme: const AppBarTheme(centerTitle: true, elevation: 0),
       ),
-      home: HomePage(db: db),
+      home: const HomePage(),
     );
   }
 }
@@ -37,14 +30,14 @@ class TorexStoreApp extends StatelessWidget {
 // ─── Home Page ──────────────────────────────────────────────────────────────
 
 class HomePage extends StatefulWidget {
-  final TorexStorage db;
-  const HomePage({super.key, required this.db});
+  const HomePage({super.key});
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
+  final db = TorexStore.instance;
   late TabController _tabController;
   List<TorexDocument> _users = [];
   List<TorexDocument> _products = [];
@@ -63,8 +56,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   Future<void> _loadData() async {
     setState(() => _loading = true);
     try {
-      final users = await widget.db.getAll('users');
-      final products = await widget.db.getAll('products');
+      final users = await db.getAll('users');
+      final products = await db.getAll('products');
       setState(() {
         _users = users;
         _products = products;
@@ -77,12 +70,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   void _setupWatchers() {
-    _userSubscription = widget.db.watch('users').listen((event) {
+    _userSubscription = db.watch('users').listen((event) {
       _loadData();
       _showSnackBar('Users: ${event.type.name} - ${event.id}');
     });
 
-    _productSubscription = widget.db.watch('products').listen((event) {
+    _productSubscription = db.watch('products').listen((event) {
       _loadData();
       _showSnackBar('Products: ${event.type.name} - ${event.id}');
     });
@@ -100,7 +93,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   Future<void> _addUser() async {
-    final id = widget.db.generateId();
+    final id = db.generateId();
     final names = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace'];
     final cities = ['Tashkent', 'Samarkand', 'Bukhara', 'Khiva', 'Namangan'];
 
@@ -115,11 +108,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       },
     );
 
-    await widget.db.put('users', doc);
+    await db.put('users', doc);
   }
 
   Future<void> _addProduct() async {
-    final id = widget.db.generateId();
+    final id = db.generateId();
     final products = ['Laptop', 'Phone', 'Tablet', 'Monitor', 'Keyboard', 'Mouse'];
     final categories = ['Electronics', 'Accessories', 'Computing'];
 
@@ -134,27 +127,27 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       },
     );
 
-    await widget.db.put('products', doc);
+    await db.put('products', doc);
   }
 
   Future<void> _deleteItem(String collection, String id) async {
-    await widget.db.delete(collection, id);
+    await db.delete(collection, id);
   }
 
   Future<void> _queryAdults() async {
-    final results = await widget.db.query('users', QueryFilter.gte('age', 25));
+    final results = await db.query('users', QueryFilter.gte('age', 25));
     setState(() => _users = results);
     _showSnackBar('Topildi: ${results.length} ta foydalanuvchi (age >= 25)');
   }
 
   Future<void> _queryExpensiveProducts() async {
-    final results = await widget.db.query('products', QueryFilter.gt('price', 500));
+    final results = await db.query('products', QueryFilter.gt('price', 500));
     setState(() => _products = results);
     _showSnackBar('Topildi: ${results.length} ta mahsulot (price > 500)');
   }
 
   Future<void> _runCompact() async {
-    final result = await widget.db.compact();
+    final result = await db.compact();
     _showSnackBar(result);
   }
 
@@ -163,7 +156,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     _userSubscription?.cancel();
     _productSubscription?.cancel();
     _tabController.dispose();
-    widget.db.close();
     super.dispose();
   }
 
@@ -430,7 +422,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 ),
                 const SizedBox(height: 16),
                 FutureBuilder<int>(
-                  future: widget.db.count('users'),
+                  future: db.count('users'),
                   builder: (context, snapshot) => _buildStatRow(
                     Icons.people,
                     'Foydalanuvchilar',
@@ -439,7 +431,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 ),
                 const SizedBox(height: 8),
                 FutureBuilder<int>(
-                  future: widget.db.count('products'),
+                  future: db.count('products'),
                   builder: (context, snapshot) => _buildStatRow(
                     Icons.inventory_2,
                     'Mahsulotlar',
@@ -475,7 +467,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   width: double.infinity,
                   child: FilledButton.tonalIcon(
                     onPressed: () async {
-                      final collections = await widget.db.collections();
+                      final collections = await db.collections();
                       _showSnackBar('Kolleksiyalar: ${collections.join(', ')}');
                     },
                     icon: const Icon(Icons.folder),

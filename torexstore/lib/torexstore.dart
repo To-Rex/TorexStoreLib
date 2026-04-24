@@ -1,29 +1,28 @@
-/// TOREX Storage - High-performance embedded database
+/// TOREX Store - Zero-config embedded database for Flutter.
+///
+/// **No init. No open. No close.**
 ///
 /// Usage:
 /// ```dart
-/// final db = TorexStorage();
-/// await db.init();
+/// final db = TorexStore.instance;
 ///
-/// await db.put('users', TorexDocument(id: 'user_1', fields: {'name': 'Alice', 'age': 25}));
+/// await db.put('users', TorexDocument(id: 'user_1', fields: {'name': 'Alice'}));
 /// final user = await db.get('users', 'user_1');
-/// final adults = await db.query('users', QueryFilter.gt('age', 18));
-///
-/// db.watch('users').listen((event) {
-///   print('${event.type}: ${event.id}');
-/// });
-///
-/// await db.close();
 /// ```
+///
+/// The database lifecycle is fully automatic:
+/// - Lazy initialization on first use
+/// - Auto-reopen if closed (always-available API)
+/// - Auto-close on app background (lifecycle integration)
+/// - Idle timeout auto-close (resource optimization)
+/// - Crash-safe writes via WAL (no data loss)
+/// - Singleton instance (prevent multiple DB instances)
 library torexstore;
 
 import 'dart:async';
-import 'dart:io';
-import 'dart:typed_data';
 
-import 'package:path_provider/path_provider.dart';
-import 'package:uuid/uuid.dart';
-
+import 'src/engine/lifecycle_manager.dart';
+import 'src/engine/storage_engine.dart';
 import 'src/models/document.dart';
 import 'src/models/query_filter.dart';
 import 'src/reactive/store_watcher.dart';
@@ -32,477 +31,351 @@ export 'src/models/document.dart';
 export 'src/models/query_filter.dart';
 export 'src/reactive/store_watcher.dart';
 
-/// Main database API class
+/// Production-ready embedded database with fully automatic lifecycle.
 ///
-/// Provides a clean, developer-friendly API for all database operations.
-/// Uses in-memory storage with file persistence using the same binary format
-/// as the Rust core engine.
-class TorexStorage {
-  static const _dbName = 'torex_data';
+/// ## Key Design Principles
+///
+/// 1. **Zero-config**: No init/open/close required
+/// 2. **Always-available**: Auto-reopens if closed
+/// 3. **Crash-safe**: WAL ensures no data loss
+/// 4. **Resource-efficient**: Auto-closes on idle/background
+/// 5. **Singleton**: Single instance prevents conflicts
+///
+/// ## Usage
+///
+/// ```dart
+/// final db = TorexStore.instance;
+///
+/// // Just use it - no initialization needed
+/// await db.put('key', TorexDocument(id: '1', fields: {'value': 'hello'}));
+/// final doc = await db.get('key', '1');
+/// ```
+class TorexStore {
+  // ─── Singleton ──────────────────────────────────────────────────────────
 
-  /// Creates a new TorexStorage instance.
+  static TorexStore? _instance;
+
+  /// Configuration for the database instance.
+  static TorexStoreConfig _config = const TorexStoreConfig();
+
+  /// Whether the singleton has been configured.
+  static bool _configured = false;
+
+  /// Get the singleton database instance.
   ///
-  /// Call [init] before performing any database operations.
-  TorexStorage();
-
-  bool _initialized = false;
-  String? _path;
-  final Map<String, Map<String, Map<String, dynamic>>> _store = {};
-  final Map<String, StoreWatcher> _watchers = {};
-  final _uuid = const Uuid();
-
-  /// Check if the database is initialized
-  bool get isInitialized => _initialized;
-
-  /// Get the database path
-  String? get path => _path;
-
-  /// Initialize the database
-  ///
-  /// If no path is provided, uses the application documents directory.
-  /// Loads existing data from disk if available.
-  Future<void> init({String? path}) async {
-    if (_initialized) return;
-
-    _path = path ?? await _defaultPath();
-
-    // Create directory if it doesn't exist
-    final dir = Directory(_path!);
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
-    }
-
-    // Load existing data from disk
-    await _loadFromDisk();
-
-    _initialized = true;
+  /// On first access, the database is not yet open. It will auto-open
+  /// on the first operation (lazy initialization).
+  static TorexStore get instance {
+    _instance ??= TorexStore._();
+    return _instance!;
   }
 
-  /// Insert a document into a collection
+  /// Short alias for [instance].
+  static TorexStore get I => instance;
+
+  /// Configure the database before first use.
+  ///
+  /// Call this optionally in `main()` to customize behavior.
+  /// If not called, sensible defaults are used.
+  ///
+  /// ```dart
+  /// void main() {
+  ///   TorexStore.configure(TorexStoreConfig(
+  ///     idleTimeout: Duration(minutes: 5),
+  ///     customPath: '/path/to/db',
+  ///   ));
+  ///   runApp(MyApp());
+  /// }
+  /// ```
+  static void configure(TorexStoreConfig config) {
+    if (_configured && _instance != null) {
+      // Already in use - config change will apply on next reopen
+    }
+    _config = config;
+    _configured = true;
+  }
+
+  /// Reset the singleton (for testing only).
+  static Future<void> reset() async {
+    if (_instance != null) {
+      await _instance!._engine.close();
+      _instance!._lifecycle.dispose();
+      _instance = null;
+    }
+    _configured = false;
+    _config = const TorexStoreConfig();
+  }
+
+  // ─── Instance Fields ────────────────────────────────────────────────────
+
+  final StorageEngine _engine = StorageEngine();
+  final LifecycleManager _lifecycle;
+
+  /// Mutex for ensuring only one initialization runs at a time.
+  Completer<void>? _initCompleter;
+
+  // ─── Private Constructor ────────────────────────────────────────────────
+
+  TorexStore._()
+      : _lifecycle = LifecycleManager(
+          idleTimeout: _config.idleTimeout,
+        ) {
+    _lifecycle.onSuspend = _onLifecycleSuspend;
+    _lifecycle.onResume = _onLifecycleResume;
+    _lifecycle.attach();
+  }
+
+  // ─── Always-Available Public API ────────────────────────────────────────
+
+  /// Insert or update a document in a collection.
+  ///
+  /// ```dart
+  /// await db.put('users', TorexDocument(id: '1', fields: {'name': 'Alice'}));
+  /// ```
   Future<void> put(String collection, TorexDocument document) async {
-    _ensureInitialized();
-    _ensureValidCollection(collection);
-
-    final id = document.id;
-    final fields = Map<String, dynamic>.from(document.toMap());
-
-    // Store in memory
-    _store.putIfAbsent(collection, () => {});
-    final isUpdate = _store[collection]!.containsKey(id);
-    _store[collection]![id] = fields;
-
-    // Persist to disk
-    await _persistCollection(collection);
-
-    // Notify watchers
-    final watcher = _watchers[collection];
-    if (watcher != null && watcher.isActive) {
-      if (isUpdate) {
-        watcher.emitUpdate(id, fields);
-      } else {
-        watcher.emitInsert(id, fields);
-      }
-    }
+    await _ensureReady();
+    _lifecycle.recordActivity();
+    await _engine.put(collection, document);
   }
 
-  /// Get a document by collection and ID
-  Future<TorexDocument?> get(String collection, String id) async {
-    _ensureInitialized();
-
-    final fields = _store[collection]?[id];
-    if (fields == null) return null;
-
-    return TorexDocument(id: id, fields: Map<String, dynamic>.from(fields));
-  }
-
-  /// Update an existing document
-  Future<void> update(String collection, TorexDocument document) async {
-    _ensureInitialized();
-
-    if (!(_store[collection]?.containsKey(document.id) ?? false)) {
-      throw StateError('Document not found: ${document.id}');
-    }
-
-    await put(collection, document);
-  }
-
-  /// Delete a document
-  Future<void> delete(String collection, String id) async {
-    _ensureInitialized();
-
-    final removed = _store[collection]?.remove(id);
-    if (removed == null) return;
-
-    // Persist changes to disk
-    await _persistCollection(collection);
-
-    // Notify watchers
-    final watcher = _watchers[collection];
-    if (watcher != null && watcher.isActive) {
-      watcher.emitDelete(id);
-    }
-  }
-
-  /// Check if a document exists
-  Future<bool> exists(String collection, String id) async {
-    _ensureInitialized();
-    return _store[collection]?.containsKey(id) ?? false;
-  }
-
-  /// Get all documents in a collection
-  Future<List<TorexDocument>> getAll(String collection) async {
-    _ensureInitialized();
-
-    final collectionData = _store[collection];
-    if (collectionData == null || collectionData.isEmpty) return [];
-
-    return collectionData.entries
-        .map((e) => TorexDocument(
-              id: e.key,
-              fields: Map<String, dynamic>.from(e.value),
-            ))
-        .toList();
-  }
-
-  /// Get document count in a collection
-  Future<int> count(String collection) async {
-    _ensureInitialized();
-    return _store[collection]?.length ?? 0;
-  }
-
-  /// Get all collection names
-  Future<List<String>> collections() async {
-    _ensureInitialized();
-    return _store.keys
-        .where((k) => _store[k]!.isNotEmpty)
-        .toList();
-  }
-
-  /// Query documents in a collection
+  /// Get a document by collection and ID.
   ///
-  /// Supports eq, ne, gt, lt, gte, lte, range, and, or, all filter types.
+  /// Returns `null` if the document doesn't exist.
+  ///
+  /// ```dart
+  /// final user = await db.get('users', '1');
+  /// ```
+  Future<TorexDocument?> get(String collection, String id) async {
+    await _ensureReady();
+    _lifecycle.recordActivity();
+    return _engine.get(collection, id);
+  }
+
+  /// Update an existing document.
+  ///
+  /// Throws [StateError] if the document doesn't exist.
+  Future<void> update(String collection, TorexDocument document) async {
+    await _ensureReady();
+    _lifecycle.recordActivity();
+    await _engine.update(collection, document);
+  }
+
+  /// Delete a document from a collection.
+  Future<void> delete(String collection, String id) async {
+    await _ensureReady();
+    _lifecycle.recordActivity();
+    await _engine.delete(collection, id);
+  }
+
+  /// Check if a document exists.
+  Future<bool> exists(String collection, String id) async {
+    await _ensureReady();
+    _lifecycle.recordActivity();
+    return _engine.exists(collection, id);
+  }
+
+  /// Get all documents in a collection.
+  Future<List<TorexDocument>> getAll(String collection) async {
+    await _ensureReady();
+    _lifecycle.recordActivity();
+    return _engine.getAll(collection);
+  }
+
+  /// Get the number of documents in a collection.
+  Future<int> count(String collection) async {
+    await _ensureReady();
+    _lifecycle.recordActivity();
+    return _engine.count(collection);
+  }
+
+  /// Get all collection names.
+  Future<List<String>> collections() async {
+    await _ensureReady();
+    _lifecycle.recordActivity();
+    return _engine.collections();
+  }
+
+  /// Query documents with a filter.
+  ///
+  /// ```dart
+  /// final adults = await db.query('users', QueryFilter.gt('age', 18));
+  /// final activeAdults = await db.query('users',
+  ///   QueryFilter.and([QueryFilter.gt('age', 18), QueryFilter.eq('active', true)]),
+  /// );
+  /// ```
   Future<List<TorexDocument>> query(
     String collection,
     QueryFilter filter,
   ) async {
-    _ensureInitialized();
-
-    final allDocs = await getAll(collection);
-    return allDocs.where((doc) => _matchesFilter(doc, filter)).toList();
+    await _ensureReady();
+    _lifecycle.recordActivity();
+    return _engine.query(collection, filter);
   }
 
-  /// Watch a collection for changes
-  Stream<StoreChangeEvent> watch(String collection) {
-    _ensureInitialized();
-
-    if (!_watchers.containsKey(collection)) {
-      final watcher = StoreWatcher(
-        collection: collection,
-        onCancel: (subscriptionId) {
-          _watchers.remove(collection);
-        },
-      );
-
-      _watchers[collection] = watcher;
-    }
-
-    return _watchers[collection]!.stream;
+  /// Watch a collection for real-time change notifications.
+  ///
+  /// Returns a broadcast [Stream] of [StoreChangeEvent]s.
+  ///
+  /// ```dart
+  /// db.watch('users').listen((event) {
+  ///   print('${event.type}: ${event.id}');
+  /// });
+  /// ```
+  Stream<StoreChangeEvent> watch(String collection) async* {
+    await _ensureReady();
+    _lifecycle.recordActivity();
+    yield* _engine.watch(collection);
   }
 
-  /// Run compaction to reclaim disk space
+  /// Run compaction to reclaim disk space.
   Future<String> compact() async {
-    _ensureInitialized();
-
-    int totalBefore = 0;
-    int totalAfter = 0;
-
-    for (final collection in _store.keys.toList()) {
-      final data = _store[collection];
-      if (data != null && data.isEmpty) {
-        // Remove empty collections
-        _store.remove(collection);
-        final file = _collectionFile(collection);
-        if (await file.exists()) {
-          await file.delete();
-        }
-      } else if (data != null) {
-        totalBefore += data.length;
-        await _persistCollection(collection);
-        totalAfter += data.length;
-      }
-    }
-
-    return 'Compaction complete: $totalAfter records preserved across $totalBefore collections, empty collections removed';
+    await _ensureReady();
+    _lifecycle.recordActivity();
+    return _engine.compact();
   }
 
-  /// Check if compaction is needed
-  Future<bool> needsCompaction({double threshold = 0.3}) async {
-    _ensureInitialized();
-    // Check if there are empty collections
-    return _store.values.any((data) => data.isEmpty);
+  /// Check if compaction is recommended.
+  Future<bool> needsCompaction() async {
+    await _ensureReady();
+    _lifecycle.recordActivity();
+    return _engine.needsCompaction();
   }
 
-  /// Generate a new unique ID
-  String generateId() => _uuid.v4();
+  /// Generate a new unique document ID.
+  String generateId() => _engine.generateId();
 
-  /// Close the database
-  Future<void> close() async {
-    if (!_initialized) return;
+  /// Check if the database is currently open and ready.
+  bool get isReady => _engine.isOpen;
 
-    // Persist all data before closing
-    for (final collection in _store.keys) {
-      await _persistCollection(collection);
-    }
+  /// Get the database file path (null if not yet opened).
+  String? get path => _engine.path;
 
-    // Cancel all watchers
-    for (final watcher in _watchers.values) {
-      watcher.cancel();
-    }
-    _watchers.clear();
+  // ─── Auto-Lifecycle Engine ──────────────────────────────────────────────
 
-    _initialized = false;
-  }
+  /// Ensures the database is open and ready for operations.
+  ///
+  /// This is the core of the "always-available" guarantee:
+  /// - If the engine is open, returns immediately
+  /// - If the engine is closed, auto-reopens it
+  /// - If initialization is in progress, waits for it to complete
+  /// - On first call, performs lazy initialization
+  Future<void> _ensureReady() async {
+    if (_engine.isOpen) return;
 
-  // ─── Private Methods ────────────────────────────────────────────────────
-
-  /// Get the default database path
-  Future<String> _defaultPath() async {
-    final appDir = await getApplicationDocumentsDirectory();
-    return '${appDir.path}/$_dbName';
-  }
-
-  /// Ensure database is initialized
-  void _ensureInitialized() {
-    if (!_initialized) {
-      throw StateError(
-        'TorexStorage is not initialized. Call init() first.',
-      );
-    }
-  }
-
-  /// Validate collection name
-  void _ensureValidCollection(String collection) {
-    if (collection.isEmpty) {
-      throw ArgumentError('Collection name cannot be empty');
-    }
-    if (collection.length > 255) {
-      throw ArgumentError('Collection name too long (max 255 chars)');
-    }
-  }
-
-  /// Get file path for a collection
-  File _collectionFile(String collection) {
-    return File('$_path/$collection.tdb');
-  }
-
-  /// Load all data from disk
-  Future<void> _loadFromDisk() async {
-    final dir = Directory(_path!);
-    if (!await dir.exists()) return;
-
-    await for (final entity in dir.list()) {
-      if (entity is File && entity.path.endsWith('.tdb')) {
-        final collectionName = entity.path
-            .split('/')
-            .last
-            .replaceAll('.tdb', '');
-
-        try {
-          final bytes = await entity.readAsBytes();
-          if (bytes.isEmpty) continue;
-
-          final documents = _deserializeCollection(bytes);
-          _store[collectionName] = documents;
-        } catch (e) {
-          // Skip corrupted files
-          continue;
-        }
-      }
-    }
-  }
-
-  /// Persist a collection to disk
-  Future<void> _persistCollection(String collection) async {
-    final data = _store[collection];
-    if (data == null || data.isEmpty) {
-      // Delete file if collection is empty
-      final file = _collectionFile(collection);
-      if (await file.exists()) {
-        await file.delete();
-      }
+    // If another call is already opening the engine, wait for it
+    if (_initCompleter != null && !_initCompleter!.isCompleted) {
+      await _initCompleter!.future;
       return;
     }
 
-    final bytes = _serializeCollection(data);
-    final file = _collectionFile(collection);
-    await file.writeAsBytes(bytes, flush: true);
+    // We are the one to open it
+    _initCompleter = Completer<void>();
+
+    try {
+      await _engine.open(path: _config.customPath);
+      _initCompleter!.complete();
+    } catch (e) {
+      _initCompleter!.completeError(e);
+      rethrow;
+    }
   }
 
-  /// Serialize a collection to binary format
+  /// Called by LifecycleManager when app goes to background or idle timeout.
+  Future<void> _onLifecycleSuspend() async {
+    if (_engine.isOpen) {
+      await _engine.close();
+    }
+  }
+
+  /// Called by LifecycleManager when resuming from suspend.
+  Future<void> _onLifecycleResume() async {
+    // Engine will auto-reopen on next _ensureReady() call
+  }
+
+  // ─── Backward Compatibility ─────────────────────────────────────────────
+
+  /// @deprecated Use [TorexStore.instance] instead.
+  /// This is provided for backward compatibility only.
+  static TorexStorageCompat get storage => TorexStorageCompat._();
+}
+
+/// Backward-compatible wrapper that mimics the old TorexStorage API.
+///
+/// @deprecated Use [TorexStore.instance] directly instead.
+class TorexStorageCompat {
+  TorexStorageCompat._();
+
+  TorexStore get _db => TorexStore.instance;
+
+  /// @deprecated Database auto-initializes. No need to call this.
+  Future<void> init({String? path}) async {
+    if (path != null) {
+      TorexStore.configure(TorexStoreConfig(customPath: path));
+    }
+    // Trigger lazy init
+    await _db.collections();
+  }
+
+  Future<void> put(String collection, TorexDocument document) =>
+      _db.put(collection, document);
+
+  Future<TorexDocument?> get(String collection, String id) =>
+      _db.get(collection, id);
+
+  Future<void> update(String collection, TorexDocument document) =>
+      _db.update(collection, document);
+
+  Future<void> delete(String collection, String id) =>
+      _db.delete(collection, id);
+
+  Future<bool> exists(String collection, String id) =>
+      _db.exists(collection, id);
+
+  Future<List<TorexDocument>> getAll(String collection) =>
+      _db.getAll(collection);
+
+  Future<int> count(String collection) => _db.count(collection);
+
+  Future<List<String>> collections() => _db.collections();
+
+  Future<List<TorexDocument>> query(
+    String collection,
+    QueryFilter filter,
+  ) =>
+      _db.query(collection, filter);
+
+  Stream<StoreChangeEvent> watch(String collection) => _db.watch(collection);
+
+  Future<String> compact() => _db.compact();
+
+  String generateId() => _db.generateId();
+
+  /// @deprecated Database auto-closes. No need to call this.
+  Future<void> close() async {
+    // No-op: lifecycle is automatic
+  }
+
+  bool get isInitialized => _db.isReady;
+
+  String? get path => _db.path;
+}
+
+/// Configuration for [TorexStore].
+///
+/// Pass to [TorexStore.configure] before first use (optional).
+class TorexStoreConfig {
+  /// Duration of inactivity before auto-closing the database.
   ///
-  /// Format:
-  /// [num_docs: u32]
-  /// For each doc:
-  ///   [id_len: u16][id: bytes][fields_data: bytes with length prefix]
-  Uint8List _serializeCollection(Map<String, Map<String, dynamic>> data) {
-    final buffer = BytesBuilder();
+  /// Default: 30 seconds. Set to [Duration.zero] to disable idle timeout.
+  final Duration idleTimeout;
 
-    // Number of documents
-    buffer.add(_uint32ToBytes(data.length));
+  /// Custom database file path.
+  ///
+  /// If null, uses the default application documents directory.
+  final String? customPath;
 
-    for (final entry in data.entries) {
-      final id = entry.key;
-      final fields = entry.value;
-
-      // Document ID
-      final idBytes = Uint8List.fromList(id.codeUnits);
-      buffer.add(_uint16ToBytes(idBytes.length));
-      buffer.add(idBytes);
-
-      // Fields as binary (using TorexDocument format)
-      final doc = TorexDocument(id: id, fields: fields);
-      final fieldsBytes = doc.toBytes();
-      buffer.add(_uint32ToBytes(fieldsBytes.length));
-      buffer.add(fieldsBytes);
-    }
-
-    return buffer.toBytes();
-  }
-
-  /// Deserialize a collection from binary format
-  Map<String, Map<String, dynamic>> _deserializeCollection(Uint8List bytes) {
-    final result = <String, Map<String, dynamic>>{};
-    int offset = 0;
-
-    // Read number of documents
-    final numDocs = _bytesToUint32(bytes, offset);
-    offset += 4;
-
-    for (int i = 0; i < numDocs; i++) {
-      // Read document ID
-      final idLen = _bytesToUint16(bytes, offset);
-      offset += 2;
-
-      final id = String.fromCharCodes(bytes.sublist(offset, offset + idLen));
-      offset += idLen;
-
-      // Read fields data length
-      final fieldsLen = _bytesToUint32(bytes, offset);
-      offset += 4;
-
-      // Read and deserialize fields
-      final fieldsBytes = bytes.sublist(offset, offset + fieldsLen);
-      offset += fieldsLen;
-
-      final fields = TorexDocument.fromBytes(Uint8List.fromList(fieldsBytes));
-      result[id] = fields;
-    }
-
-    return result;
-  }
-
-  /// Check if a document matches a query filter
-  bool _matchesFilter(TorexDocument doc, QueryFilter filter) {
-    switch (filter.type) {
-      case 'all':
-        return true;
-
-      case 'eq':
-        final fieldValue = doc[filter.field!];
-        return _compareValues(fieldValue, filter.value) == 0;
-
-      case 'ne':
-        final fieldValue = doc[filter.field!];
-        return _compareValues(fieldValue, filter.value) != 0;
-
-      case 'gt':
-        final fieldValue = doc[filter.field!];
-        return _compareValues(fieldValue, filter.value) > 0;
-
-      case 'lt':
-        final fieldValue = doc[filter.field!];
-        return _compareValues(fieldValue, filter.value) < 0;
-
-      case 'gte':
-        final fieldValue = doc[filter.field!];
-        return _compareValues(fieldValue, filter.value) >= 0;
-
-      case 'lte':
-        final fieldValue = doc[filter.field!];
-        return _compareValues(fieldValue, filter.value) <= 0;
-
-      case 'range':
-        final fieldValue = doc[filter.field!];
-        return _compareValues(fieldValue, filter.value) >= 0 &&
-            _compareValues(fieldValue, filter.value2) < 0;
-
-      case 'and':
-        return filter.conditions?.every((f) => _matchesFilter(doc, f)) ?? true;
-
-      case 'or':
-        return filter.conditions?.any((f) => _matchesFilter(doc, f)) ?? false;
-
-      default:
-        return true;
-    }
-  }
-
-  /// Compare two dynamic values
-  /// Returns negative if a < b, 0 if equal, positive if a > b
-  int _compareValues(dynamic a, dynamic b) {
-    if (a == null && b == null) return 0;
-    if (a == null) return -1;
-    if (b == null) return 1;
-
-    // Handle numeric comparisons
-    if (a is num && b is num) {
-      return a.compareTo(b);
-    }
-
-    // Handle string comparisons
-    if (a is String && b is String) {
-      return a.compareTo(b);
-    }
-
-    // Handle bool comparisons
-    if (a is bool && b is bool) {
-      if (a == b) return 0;
-      return a ? 1 : -1;
-    }
-
-    // Try to convert to comparable types
-    if (a is num && b is num) {
-      return a.compareTo(b);
-    }
-
-    // Convert int/double for comparison
-    if (a is int && b is double) return a.toDouble().compareTo(b);
-    if (a is double && b is int) return a.compareTo(b.toDouble());
-
-    return 0;
-  }
-
-  // ─── Byte helpers ─────────────────────────────────────────────────────
-
-  static Uint8List _uint32ToBytes(int value) {
-    final bytes = ByteData(4);
-    bytes.setUint32(0, value, Endian.little);
-    return bytes.buffer.asUint8List();
-  }
-
-  static int _bytesToUint32(Uint8List data, int offset) {
-    return ByteData.sublistView(data, offset, offset + 4)
-        .getUint32(0, Endian.little);
-  }
-
-  static Uint8List _uint16ToBytes(int value) {
-    final bytes = ByteData(2);
-    bytes.setUint16(0, value, Endian.little);
-    return bytes.buffer.asUint8List();
-  }
-
-  static int _bytesToUint16(Uint8List data, int offset) {
-    return ByteData.sublistView(data, offset, offset + 2)
-        .getUint16(0, Endian.little);
-  }
+  const TorexStoreConfig({
+    this.idleTimeout = const Duration(seconds: 30),
+    this.customPath,
+  });
 }

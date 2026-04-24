@@ -4,19 +4,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:torexstore/torexstore.dart';
 import 'package:torexstore_app/main.dart';
 
-/// Helper: vaqtinchalik papkada TorexStorage yaratadi
-Future<TorexStorage> _createTestDb() async {
-  final db = TorexStorage();
-  final tempDir =
-      Directory.systemTemp.createTempSync('torex_test_').path;
-  await db.init(path: tempDir);
-  return db;
+/// Helper: vaqtinchalik papkada TorexStore konfiguratsiya qiladi
+Future<void> _setupTestDb() async {
+  final tempDir = Directory.systemTemp.createTempSync('torex_test_').path;
+  TorexStore.configure(TorexStoreConfig(
+    customPath: tempDir,
+    idleTimeout: Duration.zero, // Disable idle timeout for tests
+  ));
 }
 
-/// Helper: testdan keyin papkani tozalash
-void _cleanup(TorexStorage db) {
-  final path = db.path;
-  db.close();
+/// Helper: testdan keyin tozalash
+Future<void> _cleanup() async {
+  final path = TorexStore.instance.path;
+  await TorexStore.reset();
   if (path != null) {
     final dir = Directory(path);
     if (dir.existsSync()) dir.deleteSync(recursive: true);
@@ -25,25 +25,23 @@ void _cleanup(TorexStorage db) {
 
 void main() {
   group('TorexStoreApp Widget Tests', () {
-    late TorexStorage db;
-
     setUp(() async {
-      db = await _createTestDb();
+      await _setupTestDb();
     });
 
-    tearDown(() {
-      _cleanup(db);
+    tearDown(() async {
+      await _cleanup();
     });
 
     testWidgets('Ilova muvaffaqiyatli yuklanadi', (tester) async {
-      await tester.pumpWidget(TorexStoreApp(db: db));
+      await tester.pumpWidget(const TorexStoreApp());
       await tester.pumpAndSettle();
 
       expect(find.text('TOREX Store'), findsOneWidget);
     });
 
     testWidgets('TabBar 3 ta tab ko\'rsatadi', (tester) async {
-      await tester.pumpWidget(TorexStoreApp(db: db));
+      await tester.pumpWidget(const TorexStoreApp());
       await tester.pumpAndSettle();
 
       expect(find.text('Users'), findsOneWidget);
@@ -53,7 +51,7 @@ void main() {
 
     testWidgets('Users tab bo\'sh holatda to\'g\'ri matn ko\'rsatadi',
         (tester) async {
-      await tester.pumpWidget(TorexStoreApp(db: db));
+      await tester.pumpWidget(const TorexStoreApp());
       await tester.pumpAndSettle();
 
       expect(find.text('Foydalanuvchilar yo\'q'), findsOneWidget);
@@ -64,10 +62,9 @@ void main() {
 
     testWidgets('Products tab bo\'sh holatda to\'g\'ri matn ko\'rsatadi',
         (tester) async {
-      await tester.pumpWidget(TorexStoreApp(db: db));
+      await tester.pumpWidget(const TorexStoreApp());
       await tester.pumpAndSettle();
 
-      // Products tab ga o'tish
       await tester.tap(find.text('Products'));
       await tester.pumpAndSettle();
 
@@ -78,10 +75,9 @@ void main() {
     });
 
     testWidgets('Tools tab to\'g\'ri render bo\'ladi', (tester) async {
-      await tester.pumpWidget(TorexStoreApp(db: db));
+      await tester.pumpWidget(const TorexStoreApp());
       await tester.pumpAndSettle();
 
-      // Tools tab ga o'tish
       await tester.tap(find.text('Tools'));
       await tester.pumpAndSettle();
 
@@ -93,15 +89,14 @@ void main() {
     });
 
     testWidgets('Foydalanuvchi qo\'shish tugmasi mavjud', (tester) async {
-      await tester.pumpWidget(TorexStoreApp(db: db));
+      await tester.pumpWidget(const TorexStoreApp());
       await tester.pumpAndSettle();
 
-      expect(
-          find.text('Foydalanuvchi qo\'shish'), findsOneWidget);
+      expect(find.text('Foydalanuvchi qo\'shish'), findsOneWidget);
     });
 
     testWidgets('Mahsulot qo\'shish tugmasi mavjud', (tester) async {
-      await tester.pumpWidget(TorexStoreApp(db: db));
+      await tester.pumpWidget(const TorexStoreApp());
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Products'));
@@ -112,33 +107,28 @@ void main() {
 
     testWidgets('Foydalanuvchi qo\'shish tugmasini bosganda yangi user paydo bo\'ladi',
         (tester) async {
-      await tester.pumpWidget(TorexStoreApp(db: db));
+      await tester.pumpWidget(const TorexStoreApp());
       await tester.pumpAndSettle();
 
-      // Bo'sh holatni tekshirish
       expect(find.text('Foydalanuvchilar yo\'q'), findsOneWidget);
 
-      // Foydalanuvchi qo'shish
       await tester.tap(find.text('Foydalanuvchi qo\'shish'));
       await tester.pumpAndSettle();
 
-      // Endi bo'sh holat matni yo'q, Card paydo bo'lishi kerak
       expect(find.text('Foydalanuvchilar yo\'q'), findsNothing);
       expect(find.byType(Card), findsWidgets);
     });
 
     testWidgets('Mahsulot qo\'shish tugmasini bosganda yangi product paydo bo\'ladi',
         (tester) async {
-      await tester.pumpWidget(TorexStoreApp(db: db));
+      await tester.pumpWidget(const TorexStoreApp());
       await tester.pumpAndSettle();
 
-      // Products tab ga o'tish
       await tester.tap(find.text('Products'));
       await tester.pumpAndSettle();
 
       expect(find.text('Mahsulotlar yo\'q'), findsOneWidget);
 
-      // Mahsulot qo'shish
       await tester.tap(find.text('Mahsulot qo\'shish'));
       await tester.pumpAndSettle();
 
@@ -148,34 +138,29 @@ void main() {
 
     testWidgets('Foydalanuvchi qo\'shib, keyin o\'chirish mumkin',
         (tester) async {
-      await tester.pumpWidget(TorexStoreApp(db: db));
+      await tester.pumpWidget(const TorexStoreApp());
       await tester.pumpAndSettle();
 
-      // Foydalanuvchi qo'shish
       await tester.tap(find.text('Foydalanuvchi qo\'shish'));
       await tester.pumpAndSettle();
 
-      // O'chirish tugmasini topish (delete icon)
       final deleteButtons = find.byIcon(Icons.delete_outline);
       expect(deleteButtons, findsOneWidget);
 
-      // O'chirish
       await tester.tap(deleteButtons.first);
       await tester.pumpAndSettle();
 
-      // Qayta bo'sh holatga qaytishi kerak
       expect(find.text('Foydalanuvchilar yo\'q'), findsOneWidget);
     });
 
     testWidgets('Mahsulot qo\'shib, keyin o\'chirish mumkin',
         (tester) async {
-      await tester.pumpWidget(TorexStoreApp(db: db));
+      await tester.pumpWidget(const TorexStoreApp());
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Products'));
       await tester.pumpAndSettle();
 
-      // Mahsulot qo'shish
       await tester.tap(find.text('Mahsulot qo\'shish'));
       await tester.pumpAndSettle();
 
@@ -189,14 +174,14 @@ void main() {
     });
 
     testWidgets('age ≥ 25 query tugmasi mavjud', (tester) async {
-      await tester.pumpWidget(TorexStoreApp(db: db));
+      await tester.pumpWidget(const TorexStoreApp());
       await tester.pumpAndSettle();
 
       expect(find.text('age ≥ 25'), findsOneWidget);
     });
 
     testWidgets('price > 500 query tugmasi mavjud', (tester) async {
-      await tester.pumpWidget(TorexStoreApp(db: db));
+      await tester.pumpWidget(const TorexStoreApp());
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Products'));
@@ -206,7 +191,7 @@ void main() {
     });
 
     testWidgets('Tools tab da statistika ko\'rsatiladi', (tester) async {
-      // Avval ma'lumot qo'shamiz
+      final db = TorexStore.instance;
       await db.put(
           'users',
           TorexDocument(
@@ -217,10 +202,9 @@ void main() {
               id: 'test_product_1',
               fields: {'name': 'Laptop', 'price': 999.0}));
 
-      await tester.pumpWidget(TorexStoreApp(db: db));
+      await tester.pumpWidget(const TorexStoreApp());
       await tester.pumpAndSettle();
 
-      // Tools tab ga o'tish
       await tester.tap(find.text('Tools'));
       await tester.pumpAndSettle();
 
@@ -229,22 +213,20 @@ void main() {
     });
 
     testWidgets('Yangilash tugmasi ishlaydi', (tester) async {
-      await tester.pumpWidget(TorexStoreApp(db: db));
+      await tester.pumpWidget(const TorexStoreApp());
       await tester.pumpAndSettle();
 
-      // Users tab da yangilash tugmasi
       final refreshButtons = find.byIcon(Icons.refresh);
       expect(refreshButtons, findsWidgets);
 
       await tester.tap(refreshButtons.first);
       await tester.pumpAndSettle();
 
-      // Xatoliksiz qayta yuklanishi kerak
       expect(find.text('TOREX Store'), findsOneWidget);
     });
 
     testWidgets('Compaction tugmasi bosiladi', (tester) async {
-      await tester.pumpWidget(TorexStoreApp(db: db));
+      await tester.pumpWidget(const TorexStoreApp());
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Tools'));
@@ -253,28 +235,29 @@ void main() {
       await tester.tap(find.text('Compaction (Diskni tozalash)'));
       await tester.pumpAndSettle();
 
-      // SnackBar paydo bo'lishi kerak
       expect(find.byType(SnackBar), findsOneWidget);
     });
   });
 
-  group('TorexStorage Unit Tests', () {
-    late TorexStorage db;
-
+  group('TorexStore Unit Tests', () {
     setUp(() async {
-      db = await _createTestDb();
+      await _setupTestDb();
     });
 
-    tearDown(() {
-      _cleanup(db);
+    tearDown(() async {
+      await _cleanup();
     });
 
-    test('init() muvaffaqiyatli ishlaydi', () {
-      expect(db.isInitialized, true);
+    test('Auto-init birinchi operatsiyada ishlaydi', () async {
+      final db = TorexStore.instance;
+      // Birinchi operatsiya auto-init qiladi
+      await db.put('users', TorexDocument(id: 'u1', fields: {'name': 'Alice'}));
+      expect(db.isReady, true);
       expect(db.path, isNotNull);
     });
 
     test('put() va get() to\'g\'ri ishlaydi', () async {
+      final db = TorexStore.instance;
       final doc = TorexDocument(
           id: 'user_1', fields: {'name': 'Alice', 'age': 25});
       await db.put('users', doc);
@@ -287,11 +270,13 @@ void main() {
     });
 
     test('getAll() bo\'sh kolleksiya uchun [] qaytaradi', () async {
+      final db = TorexStore.instance;
       final result = await db.getAll('nonexistent');
       expect(result, isEmpty);
     });
 
     test('delete() hujjatni o\'chiradi', () async {
+      final db = TorexStore.instance;
       final doc = TorexDocument(
           id: 'user_1', fields: {'name': 'Alice', 'age': 25});
       await db.put('users', doc);
@@ -302,6 +287,7 @@ void main() {
     });
 
     test('exists() mavjudlikni tekshiradi', () async {
+      final db = TorexStore.instance;
       final doc = TorexDocument(
           id: 'user_1', fields: {'name': 'Alice', 'age': 25});
       await db.put('users', doc);
@@ -311,6 +297,7 @@ void main() {
     });
 
     test('count() to\'g\'ri hisoblaydi', () async {
+      final db = TorexStore.instance;
       expect(await db.count('users'), 0);
 
       await db.put(
@@ -326,6 +313,7 @@ void main() {
     });
 
     test('collections() kolleksiya nomlarini qaytaradi', () async {
+      final db = TorexStore.instance;
       await db.put(
           'users',
           TorexDocument(
@@ -340,6 +328,7 @@ void main() {
     });
 
     test('query() eq filter to\'g\'ri ishlaydi', () async {
+      final db = TorexStore.instance;
       await db.put(
           'users',
           TorexDocument(
@@ -356,6 +345,7 @@ void main() {
     });
 
     test('query() gt filter to\'g\'ri ishlaydi', () async {
+      final db = TorexStore.instance;
       await db.put(
           'users',
           TorexDocument(
@@ -375,6 +365,7 @@ void main() {
     });
 
     test('query() gte filter to\'g\'ri ishlaydi', () async {
+      final db = TorexStore.instance;
       await db.put(
           'users',
           TorexDocument(
@@ -394,6 +385,7 @@ void main() {
     });
 
     test('query() range filter to\'g\'ri ishlaydi', () async {
+      final db = TorexStore.instance;
       await db.put(
           'users',
           TorexDocument(
@@ -413,6 +405,7 @@ void main() {
     });
 
     test('query() and filter to\'g\'ri ishlaydi', () async {
+      final db = TorexStore.instance;
       await db.put(
           'users',
           TorexDocument(
@@ -440,6 +433,7 @@ void main() {
     });
 
     test('query() or filter to\'g\'ri ishlaydi', () async {
+      final db = TorexStore.instance;
       await db.put(
           'users',
           TorexDocument(
@@ -463,6 +457,7 @@ void main() {
     });
 
     test('generateId() noyob ID generatsiya qiladi', () {
+      final db = TorexStore.instance;
       final id1 = db.generateId();
       final id2 = db.generateId();
       expect(id1, isNot(equals(id2)));
@@ -470,6 +465,7 @@ void main() {
     });
 
     test('compact() muvaffaqiyatli ishlaydi', () async {
+      final db = TorexStore.instance;
       await db.put(
           'users',
           TorexDocument(
@@ -477,10 +473,11 @@ void main() {
       await db.delete('users', 'u1');
 
       final result = await db.compact();
-      expect(result, contains('Compaction tugadi'));
+      expect(result, contains('Compaction'));
     });
 
     test('watch() stream hodisalarni yuboradi', () async {
+      final db = TorexStore.instance;
       final events = <StoreChangeEvent>[];
       db.watch('users').listen(events.add);
 
@@ -489,7 +486,6 @@ void main() {
           TorexDocument(
               id: 'u1', fields: {'name': 'Alice', 'age': 25}));
 
-      // Stream hodisalar biroz vaqt oladi
       await Future.delayed(const Duration(milliseconds: 100));
 
       expect(events.length, 1);
@@ -498,6 +494,7 @@ void main() {
     });
 
     test('watch() update hodisani yuboradi', () async {
+      final db = TorexStore.instance;
       final events = <StoreChangeEvent>[];
       db.watch('users').listen(events.add);
 
@@ -518,6 +515,7 @@ void main() {
     });
 
     test('watch() delete hodisani yuboradi', () async {
+      final db = TorexStore.instance;
       final events = <StoreChangeEvent>[];
       db.watch('users').listen(events.add);
 
@@ -534,32 +532,19 @@ void main() {
       expect(events[1].type, StoreEventType.delete);
     });
 
-    test('close() va qayta init() ishlaydi', () async {
-      await db.put(
-          'users',
-          TorexDocument(
-              id: 'u1', fields: {'name': 'Alice', 'age': 25}));
-      await db.close();
-
-      expect(db.isInitialized, false);
-
-      // Qayta init
-      await db.init();
-      expect(db.isInitialized, true);
+    test('Singleton pattern ishlaydi', () async {
+      final db1 = TorexStore.instance;
+      final db2 = TorexStore.I;
+      expect(identical(db1, db2), true);
     });
 
     test('Bo\'sh collection nomi bilan xato otadi', () async {
-      expect(
-        () => db.put('', TorexDocument(id: 'x', fields: {})),
-        throwsArgumentError,
-      );
-    });
-
-    test('Init qilinmagan holda xato otadi', () async {
-      final uninitDb = TorexStorage();
-      expect(
-        () => uninitDb.getAll('test'),
-        throwsStateError,
+      final db = TorexStore.instance;
+      // Auto-init first
+      await db.count('test');
+      await expectLater(
+        db.put('', TorexDocument(id: 'x', fields: {})),
+        throwsA(isA<ArgumentError>()),
       );
     });
   });

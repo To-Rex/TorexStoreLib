@@ -1,6 +1,6 @@
 name: torexstore
-description: High-performance embedded NoSQL database for Flutter, powered by Rust via flutter_rust_bridge.
-version: 0.0.1
+description: Zero-config, production-ready embedded NoSQL database for Flutter. No init, no open, no close — just use it.
+version: 1.0.0
 repository: https://github.com/To-Rex/TorexStoreLib
 issue_tracker: https://github.com/To-Rex/TorexStoreLib/issues
 
